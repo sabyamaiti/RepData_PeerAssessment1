@@ -1,25 +1,159 @@
----
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
----
+#Week 2 Assignment
 
+##Introduction
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals throughout the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
 
-## Loading and preprocessing the data
+Source Data Url: https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip
 
+Source Data downloaded: 10/23/2017
 
-
-## What is mean total number of steps taken per day?
+This document presents the results from Project Assignment 1 in the Coursera course Reproducible Research, written in a single R markdown document that can be processed by knitr and transformed into an HTML file.
 
 
 
-## What is the average daily activity pattern?
+
+##Preprocessing
+
+Loading required libraries.
+```{r}
+library(sqldf)
+library(dplyr)
+library(ggplot2)
+```
 
 
 
-## Imputing missing values
+
+##Loading data from source
+
+Code for reading the dataset and converting the date column to proper date format.
+```{r}
+activity <- read.csv("activity.csv", header = TRUE, sep=",")
+activity[,2]<-as.Date(activity$date)
+str(activity)
+```
 
 
 
-## Are there differences in activity patterns between weekdays and weekends?
+
+##Plotting total number of steps taken each day
+
+Deriving a data frame with total steps taken on each date, ignoring the rows where steps = NA.
+```{r}
+StepsPerDay <- sqldf("select date, sum(steps) steps from activity where steps <> 'NA' group by date")
+str(StepsPerDay)
+```
+
+Histogram of the total number of steps taken each day.
+```{r}
+with(StepsPerDay,plot(date,steps,type="h", main="Histogram of Daily Steps", xlab="Date", ylab="Steps per Day", col="blue", lwd=8))
+```
+
+
+Mean and median number of steps taken each day.
+```{r}
+paste("Mean Steps per Day =", mean(StepsPerDay$steps, na.rm=TRUE))
+paste("Median Steps per Day =", median(StepsPerDay$steps, na.rm=TRUE))
+```
+
+
+
+
+##Plotting the average number of steps taken
+
+Deriving a data frame with average steps taken per 5 minute interval, ignoring the rows where steps = NA.
+```{r}
+StepsPerInt <- sqldf("select interval, avg(steps) steps from activity where steps <> 'NA' group by interval")
+```
+
+Time series plot of the average number of steps taken per 5 minute interval.
+```{r}
+with(StepsPerInt,plot(interval, steps, type="l", main="Average Steps taken at each Interval", xlab="Interval ID", ylab="Average Steps", col="orange", lwd=2))
+```
+
+The 5-minute interval that, on average, contains the maximum number of steps.
+```{r}
+paste("Interval with max value =", StepsPerInt$interval[which(StepsPerInt$steps == max(StepsPerInt$steps))])
+```
+
+
+
+
+##Replacing missing values
+
+Checking number of rows in activity data set with NA rows.
+```{r}
+sum(is.na(activity$steps))
+```
+
+The missing steps will be replaced by the average steps for the particular interval number. 
+
+Copy activity data to a new dataset actNoNA.
+```{r}
+actNoNA <- activity
+```
+
+Create new dataset actWithAvg by merging actNoNA with StepsPerInt using interval column, thereby adding the average steps per interval as a new column steps.aspi.
+```{r}
+actWithAvg = merge(actNoNA, StepsPerInt, by="interval", suffixes=c(".act", ".aspi"))
+```
+
+Identify the NA rows in actNoNA.
+```{r}
+naIndex = which(is.na(actNoNA$steps))
+```
+
+Replace the NA rows in actNoNA with average steps from actWithAvg.
+```{r}
+actNoNA[naIndex,"steps"] = actWithAvg[naIndex,"steps.aspi"]
+```
+
+Checking that there are no missing values.
+```{r}
+sum(is.na(actNoNA$steps))
+```
+
+
+
+
+##Plotting total number of steps taken each day after missing values are imputed
+
+Deriving a data frame with total steps taken on each date using the updated dataset actNoNA
+```{r}
+UpdStepsPerDay <- sqldf("select date, sum(steps) steps from actNoNA group by date")
+```
+
+Histogram of the total number of steps taken each day.
+```{r}
+with(UpdStepsPerDay,plot(date,steps,type="h", main="Histogram of Daily Steps", xlab="Date", ylab="Steps per Day", col="blue", lwd=8))
+```
+
+Updated mean and median number of steps taken each day.
+```{r}
+paste("Mean Steps per Day =", mean(UpdStepsPerDay$steps, na.rm=TRUE))
+paste("Median Steps per Day =", median(UpdStepsPerDay$steps, na.rm=TRUE))
+```
+
+
+
+
+##Compare the average number of steps taken per 5-minute interval across weekdays and weekends
+
+Add a new column to the actNoNA dataset to identify whether a day is a weekday or weekend. Then convert the column to factor
+```{r}
+act_mod <- mutate(actNoNA, weektype = ifelse(weekdays(actNoNA$date) == "Saturday" | weekdays(actNoNA$date) == "Sunday", "weekend", "weekday"))
+act_mod$weektype <- as.factor(act_mod$weektype)
+str(act_mod)
+```
+
+Deriving a data frame with average steps taken per 5 minute interval by weektype
+```{r}
+StepsPerIntWeek <- sqldf("select interval, weektype, avg(steps) steps from act_mod group by interval, weektype")
+```
+
+Panel plot of the weekday and weekend data
+```{r}
+qplot(interval,steps,data = StepsPerIntWeek, geom = "line", facets = weektype~., color=weektype, main="Average Steps taken at each Interval on Weekdays/Weekends", xlab="Interval ID", ylab="Average Steps")
+```
+
+From the two plots it seems that the test subject is more active throughout the weekends compared to weekdays.
